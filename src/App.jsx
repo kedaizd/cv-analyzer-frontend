@@ -5,6 +5,7 @@ import { FaSpinner, FaCheckCircle, FaTimesCircle } from 'react-icons/fa';
 const App = () => {
     const [cvFile, setCvFile] = useState(null);
     const [jobUrl, setJobUrl] = useState('');
+    const [additionalDescription, setAdditionalDescription] = useState('');
     const [plan, setPlan] = useState('free');
     const [loading, setLoading] = useState(false);
     const [result, setResult] = useState(null);
@@ -47,15 +48,18 @@ const App = () => {
         formData.append('cv', cvFile);
         formData.append('jobUrls', JSON.stringify(urls));
         formData.append('plan', plan);
+        formData.append('additionalDescription', additionalDescription);
 
         try {
-            const response = await axios.post(`${import.meta.env.VITE_API_URL}/api/analyze-cv-multiple`, formData, {
-                headers: { 'Content-Type': 'multipart/form-data' }
-            });
+            const response = await axios.post(
+                `${import.meta.env.VITE_API_URL}/api/analyze-cv-multiple`,
+                formData,
+                { headers: { 'Content-Type': 'multipart/form-data' } }
+            );
 
             setResult(response.data.analysis);
 
-            // Zapis pełnych wyników do LocalStorage
+            // Zapis historii
             const existingHistory = JSON.parse(localStorage.getItem('analysisHistory') || '[]');
             const newEntry = {
                 date: new Date().toISOString(),
@@ -107,6 +111,20 @@ const App = () => {
                     />
                 </div>
 
+                <div className="mb-4">
+                    <label htmlFor="additionalDescription" className="block text-gray-700 font-bold mb-2">
+                        Dodatkowy opis do analizy (opcjonalny, max 1000 słów)
+                    </label>
+                    <textarea
+                        id="additionalDescription"
+                        value={additionalDescription}
+                        onChange={(e) => setAdditionalDescription(e.target.value)}
+                        className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="Opisz dodatkowe informacje, które LLM powinien uwzględnić..."
+                        rows="5"
+                    />
+                </div>
+
                 <div className="mb-6">
                     <label htmlFor="plan" className="block text-gray-700 font-bold mb-2">
                         Wybierz plan
@@ -138,24 +156,24 @@ const App = () => {
                 <div className="bg-white p-6 rounded-lg shadow-md mb-6">
                     <h2 className="text-2xl font-bold mb-4">Wyniki analizy</h2>
 
-                    {result.dopasowanie_procentowe !== undefined && (
+                    {result?.dopasowanie_procentowe !== undefined && (
                         <p className="mb-4 font-semibold">
                             Dopasowanie: <span className="text-blue-600">{result.dopasowanie_procentowe}%</span>
                         </p>
                     )}
 
-                    {result.podsumowanie && (
+                    {result?.podsumowanie && (
                         <div className="mb-4">
                             <h3 className="text-xl font-semibold mb-2">Podsumowanie</h3>
                             <p>{result.podsumowanie}</p>
                         </div>
                     )}
 
-                    {result.dopasowanie && (
+                    {result?.dopasowanie && (
                         <div className="mb-4">
                             <h3 className="text-xl font-semibold mb-2">Dopasowanie do ofert</h3>
 
-                            {Array.isArray(result.dopasowanie.mocne_strony) && (
+                            {Array.isArray(result.dopasowanie.mocne_strony) && result.dopasowanie.mocne_strony.length > 0 && (
                                 <div className="mb-2">
                                     <h4 className="font-bold">Mocne strony:</h4>
                                     <ul className="list-none">
@@ -169,7 +187,7 @@ const App = () => {
                                 </div>
                             )}
 
-                            {Array.isArray(result.dopasowanie.obszary_do_poprawy) && (
+                            {Array.isArray(result.dopasowanie.obszary_do_poprawy) && result.dopasowanie.obszary_do_poprawy.length > 0 && (
                                 <div>
                                     <h4 className="font-bold">Obszary do poprawy:</h4>
                                     <ul className="list-none">
@@ -185,7 +203,7 @@ const App = () => {
                         </div>
                     )}
 
-                    {result.pytania && (
+                    {result?.pytania && (
                         <div className="mt-6">
                             <h3 className="text-xl font-semibold mb-2">Pytania do rozmowy kwalifikacyjnej:</h3>
 

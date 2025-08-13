@@ -3,6 +3,8 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { FaSpinner, FaCheckCircle, FaTimesCircle } from 'react-icons/fa';
 
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
 const INDUSTRIES = [
   'IT',
   'Finanse',
@@ -53,18 +55,20 @@ const App = () => {
     }
   };
 
+  // Zwraca wykrytą branżę (string) lub pusty string, oraz aktualizuje stan
   const detectIndustry = async (urls) => {
     try {
-      const response = await axios.post(
-        `${import.meta.env.VITE_API_URL}/api/detect-industry`,
-        { jobUrls: urls }
-      );
-      if (response.data?.industry && INDUSTRIES.includes(response.data.industry)) {
-        setSelectedIndustry(response.data.industry);
+      const response = await axios.post(`${API_BASE}/api/detect-industry`, { jobUrls: urls });
+      const detected = response.data?.industry || '';
+      if (detected && INDUSTRIES.includes(detected)) {
+        setSelectedIndustry(detected);
         setAutoIndustryDetected(true);
+        return detected;
       }
+      return '';
     } catch (err) {
-      console.warn('Nie udało się wykryć branży automatycznie.');
+      console.warn('Nie udało się wykryć branży automatycznie.', err?.response?.data || err.message);
+      return '';
     }
   };
 
@@ -93,9 +97,10 @@ const App = () => {
       return;
     }
 
-    // Autodetekcja branży (tylko jeśli puste)
-    if (!selectedIndustry) {
-      await detectIndustry(urls);
+    // Autodetekcja branży (tylko jeśli puste) – użyjemy wartości zwróconej
+    let industryToSend = selectedIndustry;
+    if (!industryToSend) {
+      industryToSend = await detectIndustry(urls);
     }
 
     setLoading(true);
@@ -104,14 +109,14 @@ const App = () => {
 
     const formData = new FormData();
     formData.append('cv', cvFile);
-    formData.append('jobUrls', JSON.stringify(urls));
+    formData.append('urls', urls.join('\n')); // Zmieniono 'jobUrls' na 'urls'
     formData.append('plan', plan);
     formData.append('additionalDescription', additionalDescription);
-    formData.append('selectedIndustry', selectedIndustry);
+    formData.append('selectedIndustry', industryToSend || '');
 
     try {
       const response = await axios.post(
-        `${import.meta.env.VITE_API_URL}/api/analyze-cv-multiple`,
+        `${API_BASE}/api/analyze-cv-multiple`,
         formData,
         { headers: { 'Content-Type': 'multipart/form-data' } }
       );
@@ -122,7 +127,7 @@ const App = () => {
       const newEntry = {
         date: new Date().toISOString(),
         plan,
-        selectedIndustry,
+        selectedIndustry: industryToSend || selectedIndustry || '',
         results: response.data.analysis
       };
       const updatedHistory = [newEntry, ...existingHistory];
@@ -130,7 +135,9 @@ const App = () => {
       setHistory(updatedHistory);
     } catch (err) {
       console.error(err);
-      setError('Wystąpił błąd podczas analizy. Sprawdź konsolę serwera.');
+      const msg = err?.response?.data?.error || err?.message || 'Wystąpił błąd podczas analizy.';
+      const details = err?.response?.data?.details || err?.response?.data?.hint;
+      setError([msg, details].filter(Boolean).join(' — '));
     } finally {
       setLoading(false);
     }
@@ -148,8 +155,9 @@ const App = () => {
           <input
             type="file"
             onChange={handleFileChange}
-            accept=".pdf,.docx"
+            accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             className="w-full text-gray-700"
+            required
           />
         </div>
 

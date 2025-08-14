@@ -2,6 +2,26 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { FaSpinner, FaCheckCircle, FaTimesCircle } from 'react-icons/fa';
 
+// --- helper: pobierz lub nadaj wariant A/B --- //
+const getABVariant = () => {
+  const params = new URLSearchParams(window.location.search);
+  // Priorytet: jawny ?ab=0|1 w URL → zapis do localStorage
+  if (params.has('ab')) {
+    const v = params.get('ab') === '1' ? 'B' : 'A';
+    localStorage.setItem('abVariant', v);
+    return v;
+  }
+  // Jeśli już zapisany — użyj
+  const saved = localStorage.getItem('abVariant');
+  if (saved === 'A' || saved === 'B') return saved;
+
+  // Deterministyczne przypisanie (np. po userId albo losowo)
+  // Na start: 50/50
+  const v = Math.random() < 0.5 ? 'A' : 'B';
+  localStorage.setItem('abVariant', v);
+  return v;
+};
+
 const INDUSTRIES = [
   'IT / Software',
   'Finanse / Księgowość',
@@ -17,6 +37,7 @@ const INDUSTRIES = [
 ];
 
 const App = () => {
+  const [abVariant, setAbVariant] = useState(getABVariant());
   const [cvFile, setCvFile] = useState(null);
   const [jobUrl, setJobUrl] = useState('');
   const [additionalDescription, setAdditionalDescription] = useState('');
@@ -78,12 +99,52 @@ const App = () => {
 
     try {
       const response = await axios.post(
-        `${import.meta.env.VITE_API_URL}/api/analyze-cv-multiple`,
-        formData,
-        { headers: { 'Content-Type': 'multipart/form-data' } }
-      );
+      `${import.meta.env.VITE_API_URL}/api/analyze-cv-multiple`,
+          formData,
+            {
+          headers: {
+           'Content-Type': 'multipart/form-data',
+           'X-AB-Variant': abVariant   // <- to przechodzi do backendu
+        }
+              }
+                );
 
       setResult(response.data.analysis);
+     
+      try {
+  // ... setResult(response.data.analysis);
+
+  // ---- PLAUSIBLE custom event ----
+  const meta = response?.data?.analysis?.meta || {};
+  const warning = !!response?.data?.analysis?.warning_mismatch;
+  const dop = response?.data?.analysis?.dopasowanie_procentowe ?? null;
+
+  if (window.plausible) {
+    window.plausible('analysis_completed', {
+      props: {
+        ab_variant: abVariant,
+        kw_overlap_pct: meta.kw_overlap_pct ?? null,
+        industry_cv: meta.industry_cv ?? 'Unknown',
+        industry_jd: meta.industry_jd ?? 'Unknown',
+        warning_mismatch: warning ? 'true' : 'false',
+        dopasowanie_pct: dop ?? null
+      }
+    });
+  }
+
+} catch (e) { /* ignore */ }
+
+console.log('[A/B]', {
+  abVariant,
+  kw_overlap_pct: response?.data?.analysis?.meta?.kw_overlap_pct,
+  industries: {
+    cv: response?.data?.analysis?.meta?.industry_cv,
+    jd: response?.data?.analysis?.meta?.industry_jd,
+    effective: response?.data?.analysis?.meta?.industry_effective
+  },
+  warning_mismatch: response?.data?.analysis?.warning_mismatch,
+  dopasowanie_pct: response?.data?.analysis?.dopasowanie_procentowe
+});
 
       // Zapis historii
       const existingHistory = JSON.parse(localStorage.getItem('analysisHistory') || '[]');
@@ -219,7 +280,16 @@ const App = () => {
               <p>{result.podsumowanie}</p>
             </div>
           )}
-
+             {result?.warning_mismatch && (
+          <div className="p-4 mb-4 rounded-lg bg-yellow-100 text-yellow-900">
+            <b>Uwaga:</b> Wykryto rozbieżność między profilem CV a wymaganiami ogłoszenia
+            (<span className="underline">{result?.meta?.industry_cv}</span> vs <span className="underline">{result?.meta?.industry_jd}</span>).
+            <div className="mt-2 text-sm">
+              💡 <b>CTA:</b> Dodaj umiejętności z branży do której aplikujesz,
+              aby zwiększyć dopasowanie do <b>{result?.meta?.role_jd || 'docelowej roli'}</b>.
+            </div>
+          </div>
+        )}
           {result?.dopasowanie && (
             <div className="mb-4">
               <h3 className="text-xl font-semibold mb-2">Dopasowanie do ofert</h3>
